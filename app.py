@@ -1,47 +1,17 @@
-"""
-Customer Inquiry Manager
-========================
-Day 3: Basic Flask Web Application with Inquiry Submission Form
-
-What this file does:
-- Serves the home page with a customer inquiry form
-- Handles form submission and displays a confirmation message
-- Lays the structure that we will build on in later days (database, AI, notifications)
-
-Run locally:
-    python app.py
-Then open: http://localhost:5000
-"""
-
 from flask import Flask, render_template_string, request, redirect, url_for
-
-# ---------------------------------------------------------------------------
-# App Initialization
-# ---------------------------------------------------------------------------
+from database import get_or_create_customer, insert_inquiry
 
 app = Flask(__name__)
 
-
-# ---------------------------------------------------------------------------
-# HTML Templates
-# We use render_template_string here so everything stays in one file for now.
-# In later days we will move templates to a /templates folder.
-# ---------------------------------------------------------------------------
-
-# The main page template with the inquiry form
-HOME_TEMPLATE = """
-<!DOCTYPE html>
+HOME_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Customer Inquiry Manager</title>
     <style>
-        /* ---- Reset & Base ---- */
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
         @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@300;400;500;600&display=swap');
-
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
         body {
             font-family: 'DM Sans', sans-serif;
             background-color: #0f1117;
@@ -53,8 +23,6 @@ HOME_TEMPLATE = """
             justify-content: center;
             padding: 2rem;
         }
-
-        /* ---- Card ---- */
         .card {
             background: #1a1d27;
             border: 1px solid #2a2d3a;
@@ -64,8 +32,6 @@ HOME_TEMPLATE = """
             max-width: 560px;
             box-shadow: 0 24px 60px rgba(0,0,0,0.4);
         }
-
-        /* ---- Header ---- */
         .badge {
             display: inline-block;
             background: rgba(99, 102, 241, 0.15);
@@ -79,7 +45,6 @@ HOME_TEMPLATE = """
             text-transform: uppercase;
             margin-bottom: 1.2rem;
         }
-
         h1 {
             font-family: 'DM Serif Display', serif;
             font-size: 2rem;
@@ -87,19 +52,13 @@ HOME_TEMPLATE = """
             color: #ffffff;
             margin-bottom: 0.6rem;
         }
-
         .subtitle {
             color: #6b7280;
             font-size: 0.95rem;
             margin-bottom: 2.2rem;
             line-height: 1.6;
         }
-
-        /* ---- Form ---- */
-        .form-group {
-            margin-bottom: 1.25rem;
-        }
-
+        .form-group { margin-bottom: 1.25rem; }
         label {
             display: block;
             font-size: 0.82rem;
@@ -109,7 +68,6 @@ HOME_TEMPLATE = """
             text-transform: uppercase;
             margin-bottom: 0.45rem;
         }
-
         input[type="text"],
         input[type="email"],
         textarea {
@@ -124,21 +82,13 @@ HOME_TEMPLATE = """
             outline: none;
             transition: border-color 0.2s, box-shadow 0.2s;
         }
-
         input[type="text"]:focus,
         input[type="email"]:focus,
         textarea:focus {
             border-color: #6366f1;
             box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
         }
-
-        textarea {
-            resize: vertical;
-            min-height: 130px;
-            line-height: 1.6;
-        }
-
-        /* ---- Submit Button ---- */
+        textarea { resize: vertical; min-height: 130px; line-height: 1.6; }
         .btn {
             width: 100%;
             background: #6366f1;
@@ -153,11 +103,8 @@ HOME_TEMPLATE = """
             transition: background 0.2s, transform 0.1s;
             margin-top: 0.5rem;
         }
-
         .btn:hover  { background: #4f46e5; }
         .btn:active { transform: scale(0.99); }
-
-        /* ---- Flash Message ---- */
         .flash {
             background: rgba(34, 197, 94, 0.1);
             border: 1px solid rgba(34, 197, 94, 0.3);
@@ -167,8 +114,15 @@ HOME_TEMPLATE = """
             font-size: 0.9rem;
             margin-bottom: 1.5rem;
         }
-
-        /* ---- Footer note ---- */
+        .error {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #f87171;
+            border-radius: 8px;
+            padding: 0.85rem 1rem;
+            font-size: 0.9rem;
+            margin-bottom: 1.5rem;
+        }
         .footer-note {
             text-align: center;
             color: #374151;
@@ -179,119 +133,74 @@ HOME_TEMPLATE = """
 </head>
 <body>
     <div class="card">
-
-        <!-- Header -->
         <div class="badge">Customer Support</div>
         <h1>How can we help you?</h1>
-        <p class="subtitle">
-            Fill out the form below and we'll get back to you as soon as possible.
-        </p>
+        <p class="subtitle">Fill out the form below and we'll get back to you as soon as possible.</p>
 
-        <!-- Success message shown after submission -->
         {% if submitted %}
-        <div class="flash">
-            ✅ Your inquiry has been received. We'll be in touch shortly.
-        </div>
+        <div class="flash">✅ Your inquiry has been received. We'll be in touch shortly.</div>
         {% endif %}
 
-        <!-- Inquiry Form -->
-        <form method="POST" action="/submit">
+        {% if error %}
+        <div class="error">❌ Something went wrong. Please try again.</div>
+        {% endif %}
 
+        <form method="POST" action="/submit">
             <div class="form-group">
                 <label for="name">Full Name</label>
-                <input
-                    type="text"
-                    id="name"
-                    name="name"
-                    placeholder="Jane Smith"
-                    required
-                >
+                <input type="text" id="name" name="name" placeholder="Jane Smith" required>
             </div>
-
             <div class="form-group">
                 <label for="email">Email Address</label>
-                <input
-                    type="email"
-                    id="email"
-                    name="email"
-                    placeholder="jane@company.com"
-                    required
-                >
+                <input type="email" id="email" name="email" placeholder="jane@company.com" required>
             </div>
-
             <div class="form-group">
                 <label for="message">Your Message</label>
-                <textarea
-                    id="message"
-                    name="message"
-                    placeholder="Describe your inquiry in detail..."
-                    required
-                ></textarea>
+                <textarea id="message" name="message" placeholder="Describe your inquiry in detail..." required></textarea>
             </div>
-
             <button type="submit" class="btn">Send Inquiry →</button>
-
         </form>
 
         <p class="footer-note">Your message is handled securely and privately.</p>
     </div>
 </body>
-</html>
-"""
+</html>"""
 
-
-# ---------------------------------------------------------------------------
-# Routes
-# ---------------------------------------------------------------------------
 
 @app.route("/")
 def home():
-    """
-    Home page route.
-    Renders the inquiry submission form.
-    """
-    return render_template_string(HOME_TEMPLATE, submitted=False)
+    return render_template_string(HOME_TEMPLATE, submitted=False, error=False)
 
 
 @app.route("/submit", methods=["POST"])
 def submit():
-    """
-    Form submission route.
-
-    Right now this just reads the form data and prints it to the terminal.
-    In Day 6 we will save this data to the Azure SQL database.
-    In Day 9 we will pass the message to Azure OpenAI for categorization.
-    In Day 13 we will trigger email notifications based on the AI's category.
-    """
-    # Read the submitted form data
-    name    = request.form.get("name", "").strip()
-    email   = request.form.get("email", "").strip()
+    name    = request.form.get("name",    "").strip()
+    email   = request.form.get("email",   "").strip()
     message = request.form.get("message", "").strip()
 
-    # Basic validation — make sure none of the fields are empty
     if not name or not email or not message:
-        # If any field is empty, send them back to the form
         return redirect(url_for("home"))
 
-    # For now: print the submission to the terminal so you can see it
-    # This is temporary — Day 6 replaces this with a database insert
-    print("\n" + "="*50)
-    print("NEW INQUIRY RECEIVED")
-    print("="*50)
-    print(f"  Name   : {name}")
-    print(f"  Email  : {email}")
-    print(f"  Message: {message}")
-    print("="*50 + "\n")
+    try:
+        customer_id = get_or_create_customer(name, email)
+        inquiry_id  = insert_inquiry(customer_id, message)
 
-    # Show the form again with a success message
-    return render_template_string(HOME_TEMPLATE, submitted=True)
+        print("\n" + "="*50)
+        print("INQUIRY SAVED TO DATABASE")
+        print("="*50)
+        print(f"  Customer ID : {customer_id}")
+        print(f"  Inquiry ID  : {inquiry_id}")
+        print(f"  Name        : {name}")
+        print(f"  Email       : {email}")
+        print(f"  Message     : {message}")
+        print("="*50 + "\n")
 
+        return render_template_string(HOME_TEMPLATE, submitted=True, error=False)
 
-# ---------------------------------------------------------------------------
-# Run the App
-# ---------------------------------------------------------------------------
+    except Exception as e:
+        print(f"[ERROR] Failed to save inquiry: {e}")
+        return render_template_string(HOME_TEMPLATE, submitted=False, error=True)
+
 
 if __name__ == "__main__":
-    # debug=True means Flask will auto-reload when you save changes to this file
-    # IMPORTANT: never use debug=True in production (on the VM with Gunicorn)
-    app.run(debug=True, host="0.0.0.0", port=5001)
+    app.run(debug=True, host="0.0.0.0", port=5000)
