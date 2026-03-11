@@ -1,7 +1,7 @@
 """
 Customer Inquiry Manager
 ========================
-Day 11 Update: Error handling and logging added.
+Day 13 Update: Urgency-based email notifications added.
 
 Full flow:
     1. Customer submits form
@@ -9,32 +9,28 @@ Full flow:
     3. Inquiry saved to DB
     4. AI categorizes the message via Azure OpenAI
     5. AI result saved to AICategories table
-    6. Success message shown to customer
-
-Reliability improvements in Day 11:
-    - AI failure no longer crashes the app
-    - Fallback category used if AI is unavailable
-    - All activity logged to app.log with timestamps
-    - Separate try/except for AI so DB saves always complete
+    6. If Sales or Billing → send instant urgent email notification
+       If Support or General → no instant email (goes to daily summary)
+    7. Success message shown to customer
 """
 
 import logging
 from flask import Flask, render_template_string, request, redirect, url_for
 from database import get_or_create_customer, insert_inquiry, insert_ai_category
 from ai_service import categorize_inquiry
+from notifications import send_urgent_notification
+    
 
 # ---------------------------------------------------------------------------
 # Logging Setup
-# Writes all activity to app.log AND prints to terminal simultaneously
-# On the VM: tail -f app.log to watch live activity
 # ---------------------------------------------------------------------------
 
 logging.basicConfig(
     level    = logging.INFO,
     format   = "%(asctime)s [%(levelname)s] %(message)s",
     handlers = [
-        logging.FileHandler("app.log"),  # writes to file on the VM
-        logging.StreamHandler()           # also prints to terminal
+        logging.FileHandler("app.log"),
+        logging.StreamHandler()
     ]
 )
 logger = logging.getLogger(__name__)
@@ -248,18 +244,22 @@ def home():
 @app.route("/submit", methods=["POST"])
 def submit():
     """
-    Day 11 — Full pipeline with error handling:
+    Day 13 — Full pipeline with urgency-based notifications:
 
     Step 1: Read and validate form data
-    Step 2: Save customer to DB (or find existing customer by email)
-    Step 3: Save inquiry message to DB
-    Step 4: Send message to Azure OpenAI for categorization
-            → If AI fails: use fallback General/Low, inquiry still saved
-    Step 5: Save AI category result to AICategories table
-    Step 6: Show success message to customer
+    Step 2: Save customer to DB
+    Step 3: Save inquiry to DB
+    Step 4: AI categorizes the message
+    Step 5: Save AI result to AICategories table
+    Step 6: Send instant notification if Sales or Billing
+            Skip notification if Support or General
+    Step 7: Show success message to customer
 
-    Key principle: DB saves (Steps 2-3) must always complete.
-    AI failure (Step 4) must never prevent the inquiry from being saved.
+    Notification logic:
+        Sales   → 🔴 Instant email — VERY URGENT
+        Billing → 🟠 Instant email — URGENT
+        Support → No instant email (goes to daily summary)
+        General → No instant email (goes to daily summary)
     """
 
     # Step 1 — Read and validate form data
@@ -274,17 +274,15 @@ def submit():
     logger.info(f"New inquiry received from {email}")
 
     try:
-        # Step 2 — Save customer (creates new or returns existing id)
+        # Step 2 — Save customer
         customer_id = get_or_create_customer(name, email)
         logger.info(f"Customer saved/found — ID: {customer_id} | Email: {email}")
 
-        # Step 3 — Save the inquiry to DB
+        # Step 3 — Save inquiry
         inquiry_id = insert_inquiry(customer_id, message)
         logger.info(f"Inquiry saved — ID: {inquiry_id} | Customer ID: {customer_id}")
 
         # Step 4 — AI categorization
-        # Wrapped in its own try/except so a failed AI call never
-        # prevents the inquiry from being saved to the database
         try:
             ai_result = categorize_inquiry(message)
             logger.info(
@@ -293,9 +291,6 @@ def submit():
                 f"Urgency: {ai_result['urgency']}"
             )
         except Exception as ai_error:
-            # AI failed — log the error and use safe fallback values
-            # The customer still sees a success message
-            # Admin can manually review inquiries flagged as failed
             logger.error(f"AI categorization failed for Inquiry {inquiry_id}: {ai_error}")
             ai_result = {
                 "category": "General",
@@ -303,23 +298,40 @@ def submit():
                 "summary":  "AI categorization failed — please review manually."
             }
 
-        # Step 5 — Save AI result to AICategories table
+        # Step 5 — Save AI result to database
         insert_ai_category(
             inquiry_id    = inquiry_id,
             category      = ai_result["category"],
             urgency_level = ai_result["urgency"],
             ai_summary    = ai_result["summary"]
         )
-        logger.info(
-            f"AI category saved — Inquiry: {inquiry_id} | "
-            f"Category: {ai_result['category']}"
-        )
+        logger.info(f"AI category saved — Inquiry: {inquiry_id} | Category: {ai_result['category']}")
 
-        # Step 6 — Show success message to customer
+        # Step 6 — Send instant notification for urgent categories only
+        if ai_result["category"] in ("Sales", "Billing"):
+            send_urgent_notification(
+                name     = name,
+                email    = email,
+                message  = message,
+                category = ai_result["category"],
+                urgency  = ai_result["urgency"],
+                summary  = ai_result["summary"]
+            )
+            logger.info(
+                f"Urgent notification sent — "
+                f"Category: {ai_result['category']} | Customer: {email}"
+            )
+        else:
+            # Support and General go into the daily summary only
+            logger.info(
+                f"No instant notification — "
+                f"Category: {ai_result['category']} (queued for daily summary)"
+            )
+
+        # Step 7 — Show success to customer
         return render_template_string(HOME_TEMPLATE, submitted=True, error=False)
 
     except Exception as e:
-        # Outer catch — something went wrong with DB saves
         logger.error(f"Form submission failed for {email}: {e}")
         return render_template_string(HOME_TEMPLATE, submitted=False, error=True)
 
@@ -330,4 +342,4 @@ def submit():
 
 if __name__ == "__main__":
     logger.info("Customer Inquiry Manager starting...")
-    app.run(debug=True, host="0.0.0.0", port=5001)
+    app.run(debug=True, host="0.0.0.0", port=5001) 
