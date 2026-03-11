@@ -1,7 +1,7 @@
 """
 ai_service.py
 =============
-Day 9: AI Categorization Service
+Day 11 Update: Replaced print statements with proper logging.
 
 This file handles all communication with Azure OpenAI.
 It reads customer inquiry messages and classifies them into:
@@ -13,23 +13,24 @@ It reads customer inquiry messages and classifies them into:
     Support       | Medium
     General       | Low
 
-The AI also returns a one-line summary of the inquiry.
-
 All responses are returned as structured JSON so they are
 easy to parse and save to the AICategories table in the database.
 """
 
 import os
+import json
+import logging
 from openai import AzureOpenAI
 from dotenv import load_dotenv
-import json
 
 # Load environment variables from .env file
 load_dotenv()
 
+# Use the same logger as app.py so all logs go to the same file
+logger = logging.getLogger(__name__)
+
 # ---------------------------------------------------------------------------
 # Azure OpenAI Client
-# Initialized once here — reused for every categorization call
 # ---------------------------------------------------------------------------
 
 client = AzureOpenAI(
@@ -42,9 +43,6 @@ DEPLOYMENT_NAME = os.getenv("AZURE_OPENAI_DEPLOYMENT")
 
 # ---------------------------------------------------------------------------
 # System Prompt
-# This is the instruction we give the AI before every message.
-# It tells the AI exactly what its job is and what format to return.
-# Changing this prompt changes how the AI behaves — this is prompt engineering.
 # ---------------------------------------------------------------------------
 
 SYSTEM_PROMPT = """
@@ -53,19 +51,20 @@ Your job is to read a customer inquiry message and classify it.
 
 You must classify every message into exactly ONE of these categories:
 
-1. Sales    — Customer wants to buy, get pricing, request a quote, 
+1. Sales    — Customer wants to buy, get pricing, request a quote,
                discuss bulk orders, partnerships, or enterprise deals.
                Urgency: Very Urgent
 
-2. Billing  — Customer has a payment issue, invoice problem, 
+2. Billing  — Customer has a payment issue, invoice problem,
                refund request, double charge, or subscription concern.
                Urgency: Urgent
 
-3. Support  — Customer has a technical problem, login issue, 
-               bug report, or needs help using a product/service.
+3. Support  — Customer has a technical problem, login issue,
+               password reset issue, bug report, or needs help
+               using a product/service.
                Urgency: Medium
 
-4. General  — Everything else. Questions about hours, contact info, 
+4. General  — Everything else. Questions about hours, contact info,
                general feedback, compliments, or unclear inquiries.
                Urgency: Low
 
@@ -108,6 +107,7 @@ def categorize_inquiry(message):
     Returns a safe fallback dict if anything goes wrong,
     so the app never crashes due to an AI failure.
     """
+    raw_response = None
 
     try:
         response = client.chat.completions.create(
@@ -116,17 +116,17 @@ def categorize_inquiry(message):
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user",   "content": f"Customer message: {message}"}
             ],
-            temperature = 0.1,   # Low temperature = more consistent, predictable responses
-            max_tokens  = 150    # We only need a small JSON response
+            temperature = 0.1,
+            max_tokens  = 150
         )
 
-        # Extract the raw text response from the API
+        # Extract the raw text response
         raw_response = response.choices[0].message.content.strip()
 
-        # Parse the JSON response
+        # Parse JSON response
         result = json.loads(raw_response)
 
-        # Validate that all expected keys are present
+        # Validate all expected keys are present
         required_keys = {"category", "urgency", "summary"}
         if not required_keys.issubset(result.keys()):
             raise ValueError(f"Missing keys in AI response: {result}")
@@ -139,25 +139,19 @@ def categorize_inquiry(message):
         return result
 
     except json.JSONDecodeError as e:
-        # AI returned something that isn't valid JSON
-        print(f"[AI ERROR] Failed to parse JSON response: {e}")
-        print(f"[AI ERROR] Raw response was: {raw_response}")
+        logger.error(f"AI returned invalid JSON: {e} | Raw response: {raw_response}")
         return _fallback_response()
 
     except Exception as e:
-        # Any other error — network issue, API down, etc.
-        print(f"[AI ERROR] Categorization failed: {e}")
+        logger.error(f"AI categorization failed: {e}")
         return _fallback_response()
 
 
 def _fallback_response():
     """
     Returns a safe default response when AI categorization fails.
-    This ensures the app never crashes — the inquiry is still saved
-    to the database, just without an AI category.
-
-    The 'Pending' category signals to the admin dashboard
-    that this inquiry needs manual review.
+    The inquiry is still saved to the database — nothing is lost.
+    Admin dashboard will show these as General/Low for manual review.
     """
     return {
         "category": "General",
@@ -168,64 +162,39 @@ def _fallback_response():
 
 # ---------------------------------------------------------------------------
 # Test Runner
-# Run this file directly to test all 10 sample messages:
+# Run directly to test all 10 sample messages:
 #   python ai_service.py
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
 
-    # 10 test messages covering all categories and edge cases
+    # Set up basic logging for standalone test run
+    logging.basicConfig(
+        level  = logging.INFO,
+        format = "%(asctime)s [%(levelname)s] %(message)s"
+    )
+
     test_messages = [
-        {
-            "id": 1,
-            "expected": "Sales",
-            "message": "Hi, we are a company of 50 employees and we are interested in purchasing your product. Can you send us a quote and pricing details?"
-        },
-        {
-            "id": 2,
-            "expected": "Billing",
-            "message": "I was charged twice on my credit card this month for my subscription. Invoice number 1042. Please refund the duplicate charge."
-        },
-        {
-            "id": 3,
-            "expected": "Support",
-            "message": "I cannot log into my account. I tried resetting my password but I am not receiving the reset email. Please help."
-        },
-        {
-            "id": 4,
-            "expected": "General",
-            "message": "What are your office hours and do you have a phone number I can call to speak with someone directly?"
-        },
-        {
-            "id": 5,
-            "expected": "Sales",
-            "message": "URGENT: We need 200 units delivered by end of this week for a major product launch. Please contact me immediately with pricing."
-        },
-        {
-            "id": 6,
-            "expected": "Billing",
-            "message": "My payment was declined but the money was taken from my account. I need this resolved immediately."
-        },
-        {
-            "id": 7,
-            "expected": "Support",
-            "message": "The app keeps crashing every time I try to upload a file. I am using iPhone 15 and the latest version of your app."
-        },
-        {
-            "id": 8,
-            "expected": "General",
-            "message": "Just wanted to say your customer service team was amazing last week. Really impressed with the response time!"
-        },
-        {
-            "id": 9,
-            "expected": "Sales",
-            "message": "We are interested in an enterprise partnership. Can we schedule a call to discuss bulk licensing options for our organization?"
-        },
-        {
-            "id": 10,
-            "expected": "Support",
-            "message": "How do I reset my password? I have tried the forgot password link but nothing is working."
-        },
+        {"id": 1, "expected": "Sales",
+         "message": "Hi, we are a company of 50 employees and we are interested in purchasing your product. Can you send us a quote and pricing details?"},
+        {"id": 2, "expected": "Billing",
+         "message": "I was charged twice on my credit card this month for my subscription. Invoice number 1042. Please refund the duplicate charge."},
+        {"id": 3, "expected": "Support",
+         "message": "I cannot log into my account. I tried resetting my password but I am not receiving the reset email. Please help."},
+        {"id": 4, "expected": "General",
+         "message": "What are your office hours and do you have a phone number I can call to speak with someone directly?"},
+        {"id": 5, "expected": "Sales",
+         "message": "URGENT: We need 200 units delivered by end of this week for a major product launch. Please contact me immediately with pricing."},
+        {"id": 6, "expected": "Billing",
+         "message": "My payment was declined but the money was taken from my account. I need this resolved immediately."},
+        {"id": 7, "expected": "Support",
+         "message": "The app keeps crashing every time I try to upload a file. I am using iPhone 15 and the latest version of your app."},
+        {"id": 8, "expected": "General",
+         "message": "Just wanted to say your customer service team was amazing last week. Really impressed with the response time!"},
+        {"id": 9, "expected": "Sales",
+         "message": "We are interested in an enterprise partnership. Can we schedule a call to discuss bulk licensing options for our organization?"},
+        {"id": 10, "expected": "Support",
+         "message": "How do I reset my password? I have tried the forgot password link but nothing is working."},
     ]
 
     print("\n" + "="*70)
@@ -236,9 +205,7 @@ if __name__ == "__main__":
     failed = 0
 
     for test in test_messages:
-        result = categorize_inquiry(test["message"])
-
-        # Check if category matches expectation
+        result    = categorize_inquiry(test["message"])
         is_correct = result["category"] == test["expected"]
         status     = "✅ PASS" if is_correct else "❌ FAIL"
 
@@ -258,8 +225,6 @@ if __name__ == "__main__":
     print("="*70 + "\n")
 
     if failed == 0:
-        print("🎉 All tests passed! ai_service.py is ready.")
-        print("   Next step: Connect this to app.py in Day 10.\n")
+        print("🎉 All tests passed!\n")
     else:
-        print("⚠️  Some tests failed. Review the results above.")
-        print("   Adjust the SYSTEM_PROMPT and run again until all pass.\n")
+        print("⚠️  Some tests failed. Review and adjust SYSTEM_PROMPT.\n")

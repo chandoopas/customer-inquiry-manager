@@ -1,7 +1,7 @@
 """
 Customer Inquiry Manager
 ========================
-Day 10 Update: AI categorization wired into form submission flow.
+Day 11 Update: Error handling and logging added.
 
 Full flow:
     1. Customer submits form
@@ -11,14 +11,33 @@ Full flow:
     5. AI result saved to AICategories table
     6. Success message shown to customer
 
-Coming in Day 13:
-    After step 5 we will trigger email notifications
-    for Sales and Billing categories.
+Reliability improvements in Day 11:
+    - AI failure no longer crashes the app
+    - Fallback category used if AI is unavailable
+    - All activity logged to app.log with timestamps
+    - Separate try/except for AI so DB saves always complete
 """
 
+import logging
 from flask import Flask, render_template_string, request, redirect, url_for
 from database import get_or_create_customer, insert_inquiry, insert_ai_category
 from ai_service import categorize_inquiry
+
+# ---------------------------------------------------------------------------
+# Logging Setup
+# Writes all activity to app.log AND prints to terminal simultaneously
+# On the VM: tail -f app.log to watch live activity
+# ---------------------------------------------------------------------------
+
+logging.basicConfig(
+    level    = logging.INFO,
+    format   = "%(asctime)s [%(levelname)s] %(message)s",
+    handlers = [
+        logging.FileHandler("app.log"),  # writes to file on the VM
+        logging.StreamHandler()           # also prints to terminal
+    ]
+)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
@@ -222,23 +241,25 @@ HOME_TEMPLATE = """<!DOCTYPE html>
 
 @app.route("/")
 def home():
+    logger.info("Home page visited")
     return render_template_string(HOME_TEMPLATE, submitted=False, error=False)
 
 
 @app.route("/submit", methods=["POST"])
 def submit():
     """
-    Day 10 — Full pipeline:
+    Day 11 — Full pipeline with error handling:
 
     Step 1: Read and validate form data
     Step 2: Save customer to DB (or find existing customer by email)
     Step 3: Save inquiry message to DB
     Step 4: Send message to Azure OpenAI for categorization
+            → If AI fails: use fallback General/Low, inquiry still saved
     Step 5: Save AI category result to AICategories table
     Step 6: Show success message to customer
 
-    If AI categorization fails the inquiry is still saved to the DB
-    with a fallback category of General/Low. Nothing is ever lost.
+    Key principle: DB saves (Steps 2-3) must always complete.
+    AI failure (Step 4) must never prevent the inquiry from being saved.
     """
 
     # Step 1 — Read and validate form data
@@ -247,19 +268,40 @@ def submit():
     message = request.form.get("message", "").strip()
 
     if not name or not email or not message:
+        logger.warning("Form submitted with one or more missing fields")
         return redirect(url_for("home"))
+
+    logger.info(f"New inquiry received from {email}")
 
     try:
         # Step 2 — Save customer (creates new or returns existing id)
         customer_id = get_or_create_customer(name, email)
+        logger.info(f"Customer saved/found — ID: {customer_id} | Email: {email}")
 
         # Step 3 — Save the inquiry to DB
         inquiry_id = insert_inquiry(customer_id, message)
+        logger.info(f"Inquiry saved — ID: {inquiry_id} | Customer ID: {customer_id}")
 
-        # Step 4 — Send to Azure OpenAI for categorization
-        # Returns: { "category": ..., "urgency": ..., "summary": ... }
-        # Returns fallback General/Low if AI call fails
-        ai_result = categorize_inquiry(message)
+        # Step 4 — AI categorization
+        # Wrapped in its own try/except so a failed AI call never
+        # prevents the inquiry from being saved to the database
+        try:
+            ai_result = categorize_inquiry(message)
+            logger.info(
+                f"AI categorized — Inquiry: {inquiry_id} | "
+                f"Category: {ai_result['category']} | "
+                f"Urgency: {ai_result['urgency']}"
+            )
+        except Exception as ai_error:
+            # AI failed — log the error and use safe fallback values
+            # The customer still sees a success message
+            # Admin can manually review inquiries flagged as failed
+            logger.error(f"AI categorization failed for Inquiry {inquiry_id}: {ai_error}")
+            ai_result = {
+                "category": "General",
+                "urgency":  "Low",
+                "summary":  "AI categorization failed — please review manually."
+            }
 
         # Step 5 — Save AI result to AICategories table
         insert_ai_category(
@@ -268,26 +310,17 @@ def submit():
             urgency_level = ai_result["urgency"],
             ai_summary    = ai_result["summary"]
         )
+        logger.info(
+            f"AI category saved — Inquiry: {inquiry_id} | "
+            f"Category: {ai_result['category']}"
+        )
 
-        # Log to terminal so you can watch it work live
-        print("\n" + "="*60)
-        print("NEW INQUIRY — SAVED & CATEGORIZED")
-        print("="*60)
-        print(f"  Customer ID  : {customer_id}")
-        print(f"  Inquiry ID   : {inquiry_id}")
-        print(f"  Name         : {name}")
-        print(f"  Email        : {email}")
-        print(f"  Message      : {message[:80]}")
-        print(f"  Category     : {ai_result['category']}")
-        print(f"  Urgency      : {ai_result['urgency']}")
-        print(f"  AI Summary   : {ai_result['summary']}")
-        print("="*60 + "\n")
-
-        # Step 6 — Show success message
+        # Step 6 — Show success message to customer
         return render_template_string(HOME_TEMPLATE, submitted=True, error=False)
 
     except Exception as e:
-        print(f"[ERROR] Form submission failed: {e}")
+        # Outer catch — something went wrong with DB saves
+        logger.error(f"Form submission failed for {email}: {e}")
         return render_template_string(HOME_TEMPLATE, submitted=False, error=True)
 
 
@@ -296,4 +329,5 @@ def submit():
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
+    logger.info("Customer Inquiry Manager starting...")
     app.run(debug=True, host="0.0.0.0", port=5001)
