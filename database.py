@@ -1,9 +1,20 @@
+"""
+database.py
+===========
+Handles all database connections and queries.
+All interaction with Azure SQL goes through this file.
+
+Day 6  : insert_customer, insert_inquiry, get_all_inquiries
+Day 10 : insert_ai_category added
+"""
+
 import os
 import pyodbc
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
+
 
 # ---------------------------------------------------------------------------
 # Connection
@@ -44,7 +55,7 @@ def get_or_create_customer(name, email):
 
     # Check if customer already exists
     cursor.execute(
-        "SELECT id FROM Customers WHERE email = ?", 
+        "SELECT id FROM Customers WHERE email = ?",
         (email,)
     )
     row = cursor.fetchone()
@@ -62,7 +73,7 @@ def get_or_create_customer(name, email):
 
         # Fetch the id that was just created
         cursor.execute(
-            "SELECT id FROM Customers WHERE email = ?", 
+            "SELECT id FROM Customers WHERE email = ?",
             (email,)
         )
         customer_id = cursor.fetchone()[0]
@@ -120,7 +131,7 @@ def get_all_inquiries():
             a.urgency_level AS urgency,
             a.ai_summary    AS summary
         FROM Inquiries i
-        JOIN Customers    c ON i.customer_id = c.id
+        JOIN Customers     c ON i.customer_id = c.id
         LEFT JOIN AICategories a ON a.inquiry_id = i.id
         ORDER BY i.created_at DESC
     """)
@@ -131,3 +142,30 @@ def get_all_inquiries():
 
     conn.close()
     return results
+
+
+# ---------------------------------------------------------------------------
+# AI Category Functions
+# ---------------------------------------------------------------------------
+
+def insert_ai_category(inquiry_id, category, urgency_level, ai_summary):
+    """
+    Saves the AI categorization result to the AICategories table.
+    Called immediately after categorize_inquiry() returns a result.
+
+    Args:
+        inquiry_id    (int): The ID of the inquiry this category belongs to
+        category      (str): Sales | Billing | Support | General
+        urgency_level (str): Very Urgent | Urgent | Medium | Low
+        ai_summary    (str): One line AI generated summary
+    """
+    conn   = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        INSERT INTO AICategories (inquiry_id, category, urgency_level, ai_summary)
+        VALUES (?, ?, ?, ?)
+    """, (inquiry_id, category, urgency_level, ai_summary))
+
+    conn.commit()
+    conn.close()
