@@ -34,3 +34,6 @@ yarn-error.log*
 # --- Database ---
 *.sqlite
 *.db
+
+# --- py_cache ---
+__pycache__/
