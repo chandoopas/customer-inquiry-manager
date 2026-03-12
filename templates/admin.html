@@ -81,10 +81,11 @@
             color: #ffffff;
         }
 
-        .stat-card.open   .stat-value { color: #818cf8; }
-        .stat-card.sales  .stat-value { color: #f87171; }
-        .stat-card.billing .stat-value { color: #fb923c; }
-        .stat-card.total  .stat-value { color: #ffffff; }
+        .stat-card.open     .stat-value { color: #818cf8; }
+        .stat-card.resolved .stat-value { color: #4ade80; }
+        .stat-card.sales    .stat-value { color: #f87171; }
+        .stat-card.billing  .stat-value { color: #fb923c; }
+        .stat-card.total    .stat-value { color: #ffffff; }
 
         /* ---- Filter Bar ---- */
         .filter-bar {
@@ -128,9 +129,7 @@
             border-collapse: collapse;
         }
 
-        thead {
-            background: #12141f;
-        }
+        thead { background: #12141f; }
 
         thead th {
             padding: 0.9rem 1rem;
@@ -148,8 +147,11 @@
             transition: background 0.15s;
         }
 
-        tbody tr:last-child { border-bottom: none; }
-        tbody tr:hover { background: #1e2130; }
+        tbody tr:last-child  { border-bottom: none; }
+        tbody tr:hover       { background: #1e2130; }
+
+        /* Resolved rows are dimmed */
+        tbody tr.resolved-row { opacity: 0.5; }
 
         td {
             padding: 0.9rem 1rem;
@@ -175,17 +177,16 @@
             letter-spacing: 0.05em;
         }
 
-        .badge-sales    { background: rgba(239,68,68,0.15);  color: #f87171; }
-        .badge-billing  { background: rgba(249,115,22,0.15); color: #fb923c; }
-        .badge-support  { background: rgba(234,179,8,0.15);  color: #facc15; }
-        .badge-general  { background: rgba(107,114,128,0.15);color: #9ca3af; }
+        .badge-sales    { background: rgba(239,68,68,0.15);   color: #f87171; }
+        .badge-billing  { background: rgba(249,115,22,0.15);  color: #fb923c; }
+        .badge-support  { background: rgba(234,179,8,0.15);   color: #facc15; }
+        .badge-general  { background: rgba(107,114,128,0.15); color: #9ca3af; }
 
-        /* ---- Status Badge ---- */
+        /* ---- Status ---- */
         .status-open     { color: #60a5fa; font-weight: 600; }
         .status-resolved { color: #4ade80; font-weight: 600; }
-        .status-followup { color: #a78bfa; font-weight: 600; }
 
-        /* ---- Urgency text ---- */
+        /* ---- Urgency ---- */
         .urgency-very-urgent { color: #f87171; font-size: 0.78rem; font-weight: 600; }
         .urgency-urgent      { color: #fb923c; font-size: 0.78rem; font-weight: 600; }
         .urgency-medium      { color: #facc15; font-size: 0.78rem; font-weight: 600; }
@@ -203,6 +204,24 @@
             text-overflow: ellipsis;
             color: #9ca3af;
             font-size: 0.82rem;
+        }
+
+        /* ---- Resolve Button ---- */
+        .resolve-btn {
+            display: inline-block;
+            margin-top: 5px;
+            font-size: 0.72rem;
+            color: #4ade80;
+            text-decoration: none;
+            border: 1px solid #4ade80;
+            padding: 2px 8px;
+            border-radius: 4px;
+            transition: all 0.15s;
+        }
+
+        .resolve-btn:hover {
+            background: #4ade80;
+            color: #000000;
         }
 
         /* ---- Date ---- */
@@ -247,13 +266,19 @@
     <!-- Stats Row -->
     <div class="stats">
         <div class="stat-card total">
-            <div class="stat-label">Total Inquiries</div>
+            <div class="stat-label">Total</div>
             <div class="stat-value">{{ inquiries | length }}</div>
         </div>
         <div class="stat-card open">
             <div class="stat-label">Open</div>
             <div class="stat-value">
                 {{ inquiries | selectattr("status", "equalto", "Open") | list | length }}
+            </div>
+        </div>
+        <div class="stat-card resolved">
+            <div class="stat-label">Resolved</div>
+            <div class="stat-value">
+                {{ inquiries | selectattr("status", "equalto", "Resolved") | list | length }}
             </div>
         </div>
         <div class="stat-card sales">
@@ -313,7 +338,7 @@
                 {% if inquiries %}
                     {% for inq in inquiries %}
 
-                    <!-- Row color based on category -->
+                    <!-- Row and badge classes based on category -->
                     {% if inq.category == 'Sales' %}
                         {% set row_class = 'sales-row' %}
                         {% set badge_class = 'badge-sales' %}
@@ -339,16 +364,10 @@
                         {% set urgency_class = 'urgency-low' %}
                     {% endif %}
 
-                    <!-- Status style -->
-                    {% if inq.status == 'Resolved' %}
-                        {% set status_class = 'status-resolved' %}
-                    {% elif inq.status == 'Follow-up Sent' %}
-                        {% set status_class = 'status-followup' %}
-                    {% else %}
-                        {% set status_class = 'status-open' %}
-                    {% endif %}
+                    <!-- Dim the row if resolved -->
+                    {% set resolved_class = 'resolved-row' if inq.status == 'Resolved' else '' %}
 
-                    <tr class="{{ row_class }}">
+                    <tr class="{{ row_class }} {{ resolved_class }}">
                         <td style="color: #4b5563; font-size: 0.78rem;">
                             #{{ inq.inquiry_id }}
                         </td>
@@ -357,8 +376,7 @@
                             <div class="customer-email">{{ inq.customer_email }}</div>
                         </td>
                         <td>
-                            <div class="message-preview"
-                                 title="{{ inq.message }}">
+                            <div class="message-preview" title="{{ inq.message }}">
                                 {{ inq.message[:100] }}{% if inq.message|length > 100 %}...{% endif %}
                             </div>
                             {% if inq.summary %}
@@ -379,9 +397,16 @@
                             </span>
                         </td>
                         <td>
-                            <span class="{{ status_class }}">
-                                {{ inq.status }}
-                            </span>
+                            {% if inq.status == 'Resolved' %}
+                                <span class="status-resolved">✓ Resolved</span>
+                            {% else %}
+                                <span class="status-open">Open</span>
+                                <br>
+                                <a href="/resolve/{{ inq.inquiry_id }}{% if active_filter %}?category={{ active_filter }}{% endif %}"
+                                   class="resolve-btn">
+                                    ✓ Resolve
+                                </a>
+                            {% endif %}
                         </td>
                         <td class="date-cell hide-mobile">
                             {% if inq.received_at %}

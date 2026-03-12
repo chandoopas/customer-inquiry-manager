@@ -1,17 +1,24 @@
 """
 Customer Inquiry Manager
 ========================
-Day 15 Update: Admin dashboard added.
+Day 16 Update: Resolve functionality added to admin dashboard.
 
 Routes:
-    /        → Customer inquiry submission form
-    /submit  → Handles form POST and saves to database
-    /admin   → Admin dashboard showing all inquiries
+    /                    → Customer inquiry submission form
+    /submit              → Handles form POST and saves to database
+    /admin               → Admin dashboard showing all inquiries
+    /resolve/<id>        → Marks an inquiry as Resolved  ← NEW Day 16
 """
 
 import logging
 from flask import Flask, render_template_string, render_template, request, redirect, url_for
-from database import get_or_create_customer, insert_inquiry, insert_ai_category, get_all_inquiries
+from database import (
+    get_or_create_customer,
+    insert_inquiry,
+    insert_ai_category,
+    get_all_inquiries,
+    resolve_inquiry
+)
 from ai_service import categorize_inquiry
 from notifications import send_urgent_notification
 
@@ -318,29 +325,49 @@ def admin():
     Admin dashboard — shows all inquiries with AI categories.
 
     Supports category filtering via URL query parameter:
-        /admin              → shows all inquiries
+        /admin                  → shows all inquiries
         /admin?category=Sales   → shows only Sales
         /admin?category=Billing → shows only Billing
         etc.
     """
     category_filter = request.args.get("category", "")
+    all_inquiries   = get_all_inquiries()
 
-    # Get all inquiries from database
-    all_inquiries = get_all_inquiries()
-
-    # Apply filter if one is selected
     if category_filter:
         inquiries = [i for i in all_inquiries if i.get("category") == category_filter]
     else:
         inquiries = all_inquiries
 
-    logger.info(f"Admin dashboard visited — showing {len(inquiries)} inquiries | Filter: {category_filter or 'All'}")
+    logger.info(
+        f"Admin dashboard visited — "
+        f"{len(inquiries)} inquiries shown | "
+        f"Filter: {category_filter or 'All'}"
+    )
 
     return render_template(
         "admin.html",
         inquiries     = inquiries,
         active_filter = category_filter
     )
+
+
+@app.route("/resolve/<int:inquiry_id>")
+def resolve(inquiry_id):
+    """
+    Marks an inquiry as Resolved and redirects back to the dashboard.
+    Preserves the active category filter if one was set.
+
+    Args:
+        inquiry_id (int): ID of the inquiry to resolve (from URL)
+    """
+    resolve_inquiry(inquiry_id)
+    logger.info(f"Inquiry {inquiry_id} marked as Resolved")
+
+    # Preserve active filter when redirecting back
+    category = request.args.get("category", "")
+    if category:
+        return redirect(url_for("admin", category=category))
+    return redirect(url_for("admin"))
 
 
 # ---------------------------------------------------------------------------

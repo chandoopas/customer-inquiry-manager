@@ -6,6 +6,7 @@ All interaction with Azure SQL goes through this file.
 
 Day 6  : insert_customer, insert_inquiry, get_all_inquiries
 Day 10 : insert_ai_category added
+Day 16 : resolve_inquiry added
 """
 
 import os
@@ -61,17 +62,14 @@ def get_or_create_customer(name, email):
     row = cursor.fetchone()
 
     if row:
-        # Customer exists — return their id
         customer_id = row[0]
     else:
-        # Customer is new — insert them and get the new id
         cursor.execute(
             "INSERT INTO Customers (name, email) VALUES (?, ?)",
             (name, email)
         )
         conn.commit()
 
-        # Fetch the id that was just created
         cursor.execute(
             "SELECT id FROM Customers WHERE email = ?",
             (email,)
@@ -101,7 +99,6 @@ def insert_inquiry(customer_id, message):
     )
     conn.commit()
 
-    # Get the id of the row we just inserted
     cursor.execute(
         "SELECT TOP 1 id FROM Inquiries ORDER BY id DESC"
     )
@@ -114,7 +111,7 @@ def insert_inquiry(customer_id, message):
 def get_all_inquiries():
     """
     Fetches all inquiries joined with customer details and AI categories.
-    This is the query the admin dashboard will use in Week 3.
+    Used by the admin dashboard.
     """
     conn   = get_connection()
     cursor = conn.cursor()
@@ -136,12 +133,30 @@ def get_all_inquiries():
         ORDER BY i.created_at DESC
     """)
 
-    # Convert results into a list of dictionaries — easier to work with in Flask
     columns = [column[0] for column in cursor.description]
     results = [dict(zip(columns, row)) for row in cursor.fetchall()]
 
     conn.close()
     return results
+
+
+def resolve_inquiry(inquiry_id):
+    """
+    Updates an inquiry's status to 'Resolved' in the database.
+    Called when admin clicks the Resolve button on the dashboard.
+
+    Args:
+        inquiry_id (int): The ID of the inquiry to resolve
+    """
+    conn   = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "UPDATE Inquiries SET status = 'Resolved' WHERE id = ?",
+        (inquiry_id,)
+    )
+    conn.commit()
+    conn.close()
 
 
 # ---------------------------------------------------------------------------
