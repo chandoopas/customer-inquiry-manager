@@ -1,25 +1,19 @@
 """
 Customer Inquiry Manager
 ========================
-Day 13 Update: Urgency-based email notifications added.
+Day 15 Update: Admin dashboard added.
 
-Full flow:
-    1. Customer submits form
-    2. Customer saved to DB (or existing customer found)
-    3. Inquiry saved to DB
-    4. AI categorizes the message via Azure OpenAI
-    5. AI result saved to AICategories table
-    6. If Sales or Billing → send instant urgent email notification
-       If Support or General → no instant email (goes to daily summary)
-    7. Success message shown to customer
+Routes:
+    /        → Customer inquiry submission form
+    /submit  → Handles form POST and saves to database
+    /admin   → Admin dashboard showing all inquiries
 """
 
 import logging
-from flask import Flask, render_template_string, request, redirect, url_for
-from database import get_or_create_customer, insert_inquiry, insert_ai_category
+from flask import Flask, render_template_string, render_template, request, redirect, url_for
+from database import get_or_create_customer, insert_inquiry, insert_ai_category, get_all_inquiries
 from ai_service import categorize_inquiry
 from notifications import send_urgent_notification
-    
 
 # ---------------------------------------------------------------------------
 # Logging Setup
@@ -39,7 +33,7 @@ app = Flask(__name__)
 
 
 # ---------------------------------------------------------------------------
-# HTML Template
+# HTML Template — Customer Form
 # ---------------------------------------------------------------------------
 
 HOME_TEMPLATE = """<!DOCTYPE html>
@@ -244,45 +238,35 @@ def home():
 @app.route("/submit", methods=["POST"])
 def submit():
     """
-    Day 13 — Full pipeline with urgency-based notifications:
-
-    Step 1: Read and validate form data
-    Step 2: Save customer to DB
-    Step 3: Save inquiry to DB
-    Step 4: AI categorizes the message
-    Step 5: Save AI result to AICategories table
-    Step 6: Send instant notification if Sales or Billing
-            Skip notification if Support or General
-    Step 7: Show success message to customer
-
-    Notification logic:
-        Sales   → 🔴 Instant email — VERY URGENT
-        Billing → 🟠 Instant email — URGENT
-        Support → No instant email (goes to daily summary)
-        General → No instant email (goes to daily summary)
+    Full pipeline:
+    1. Validate form data
+    2. Save customer to DB
+    3. Save inquiry to DB
+    4. AI categorizes message
+    5. Save AI result to DB
+    6. Send instant notification if Sales or Billing
+    7. Show success to customer
     """
-
-    # Step 1 — Read and validate form data
     name    = request.form.get("name",    "").strip()
     email   = request.form.get("email",   "").strip()
     message = request.form.get("message", "").strip()
 
     if not name or not email or not message:
-        logger.warning("Form submitted with one or more missing fields")
+        logger.warning("Form submitted with missing fields")
         return redirect(url_for("home"))
 
     logger.info(f"New inquiry received from {email}")
 
     try:
-        # Step 2 — Save customer
+        # Save customer
         customer_id = get_or_create_customer(name, email)
         logger.info(f"Customer saved/found — ID: {customer_id} | Email: {email}")
 
-        # Step 3 — Save inquiry
+        # Save inquiry
         inquiry_id = insert_inquiry(customer_id, message)
         logger.info(f"Inquiry saved — ID: {inquiry_id} | Customer ID: {customer_id}")
 
-        # Step 4 — AI categorization
+        # AI categorization
         try:
             ai_result = categorize_inquiry(message)
             logger.info(
@@ -298,7 +282,7 @@ def submit():
                 "summary":  "AI categorization failed — please review manually."
             }
 
-        # Step 5 — Save AI result to database
+        # Save AI result
         insert_ai_category(
             inquiry_id    = inquiry_id,
             category      = ai_result["category"],
@@ -307,7 +291,7 @@ def submit():
         )
         logger.info(f"AI category saved — Inquiry: {inquiry_id} | Category: {ai_result['category']}")
 
-        # Step 6 — Send instant notification for urgent categories only
+        # Send urgent notification if Sales or Billing
         if ai_result["category"] in ("Sales", "Billing"):
             send_urgent_notification(
                 name     = name,
@@ -317,23 +301,46 @@ def submit():
                 urgency  = ai_result["urgency"],
                 summary  = ai_result["summary"]
             )
-            logger.info(
-                f"Urgent notification sent — "
-                f"Category: {ai_result['category']} | Customer: {email}"
-            )
+            logger.info(f"Urgent notification sent — Category: {ai_result['category']} | Customer: {email}")
         else:
-            # Support and General go into the daily summary only
-            logger.info(
-                f"No instant notification — "
-                f"Category: {ai_result['category']} (queued for daily summary)"
-            )
+            logger.info(f"No instant notification — Category: {ai_result['category']} (queued for daily summary)")
 
-        # Step 7 — Show success to customer
         return render_template_string(HOME_TEMPLATE, submitted=True, error=False)
 
     except Exception as e:
         logger.error(f"Form submission failed for {email}: {e}")
         return render_template_string(HOME_TEMPLATE, submitted=False, error=True)
+
+
+@app.route("/admin")
+def admin():
+    """
+    Admin dashboard — shows all inquiries with AI categories.
+
+    Supports category filtering via URL query parameter:
+        /admin              → shows all inquiries
+        /admin?category=Sales   → shows only Sales
+        /admin?category=Billing → shows only Billing
+        etc.
+    """
+    category_filter = request.args.get("category", "")
+
+    # Get all inquiries from database
+    all_inquiries = get_all_inquiries()
+
+    # Apply filter if one is selected
+    if category_filter:
+        inquiries = [i for i in all_inquiries if i.get("category") == category_filter]
+    else:
+        inquiries = all_inquiries
+
+    logger.info(f"Admin dashboard visited — showing {len(inquiries)} inquiries | Filter: {category_filter or 'All'}")
+
+    return render_template(
+        "admin.html",
+        inquiries     = inquiries,
+        active_filter = category_filter
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -342,4 +349,4 @@ def submit():
 
 if __name__ == "__main__":
     logger.info("Customer Inquiry Manager starting...")
-    app.run(debug=True, host="0.0.0.0", port=5001) 
+    app.run(debug=True, host="0.0.0.0", port=5001)

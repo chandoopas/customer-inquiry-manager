@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard — Customer Inquiry Manager</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@300;400;500;600&display=swap');
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'DM Sans', sans-serif;
+            background-color: #0f1117;
+            color: #e8e8e8;
+            min-height: 100vh;
+            padding: 2rem;
+        }
+
+        /* ---- Header ---- */
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 2rem;
+        }
+
+        .header-left h1 {
+            font-family: 'DM Serif Display', serif;
+            font-size: 1.8rem;
+            color: #ffffff;
+        }
+
+        .header-left p {
+            color: #6b7280;
+            font-size: 0.9rem;
+            margin-top: 0.25rem;
+        }
+
+        .header-right a {
+            background: #1a1d27;
+            border: 1px solid #2a2d3a;
+            color: #818cf8;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            text-decoration: none;
+            font-size: 0.85rem;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+
+        .header-right a:hover { background: #2a2d3a; }
+
+        /* ---- Stats Row ---- */
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: #1a1d27;
+            border: 1px solid #2a2d3a;
+            border-radius: 12px;
+            padding: 1.2rem 1.5rem;
+        }
+
+        .stat-card .stat-label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #6b7280;
+            margin-bottom: 0.4rem;
+        }
+
+        .stat-card .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #ffffff;
+        }
+
+        .stat-card.open   .stat-value { color: #818cf8; }
+        .stat-card.sales  .stat-value { color: #f87171; }
+        .stat-card.billing .stat-value { color: #fb923c; }
+        .stat-card.total  .stat-value { color: #ffffff; }
+
+        /* ---- Filter Bar ---- */
+        .filter-bar {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+        }
+
+        .filter-btn {
+            padding: 0.45rem 1rem;
+            border-radius: 100px;
+            border: 1px solid #2a2d3a;
+            background: #1a1d27;
+            color: #9ca3af;
+            font-family: 'DM Sans', sans-serif;
+            font-size: 0.82rem;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.15s;
+        }
+
+        .filter-btn:hover,
+        .filter-btn.active {
+            background: #6366f1;
+            border-color: #6366f1;
+            color: #ffffff;
+        }
+
+        /* ---- Table ---- */
+        .table-wrapper {
+            background: #1a1d27;
+            border: 1px solid #2a2d3a;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        thead {
+            background: #12141f;
+        }
+
+        thead th {
+            padding: 0.9rem 1rem;
+            text-align: left;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #6b7280;
+            border-bottom: 1px solid #2a2d3a;
+        }
+
+        tbody tr {
+            border-bottom: 1px solid #1e2130;
+            transition: background 0.15s;
+        }
+
+        tbody tr:last-child { border-bottom: none; }
+        tbody tr:hover { background: #1e2130; }
+
+        td {
+            padding: 0.9rem 1rem;
+            font-size: 0.88rem;
+            vertical-align: middle;
+            color: #d1d5db;
+        }
+
+        /* ---- Urgency Color Left Border ---- */
+        tr.sales-row    { border-left: 3px solid #ef4444; }
+        tr.billing-row  { border-left: 3px solid #f97316; }
+        tr.support-row  { border-left: 3px solid #eab308; }
+        tr.general-row  { border-left: 3px solid #6b7280; }
+
+        /* ---- Category Badge ---- */
+        .badge {
+            display: inline-block;
+            padding: 0.2rem 0.65rem;
+            border-radius: 100px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .badge-sales    { background: rgba(239,68,68,0.15);  color: #f87171; }
+        .badge-billing  { background: rgba(249,115,22,0.15); color: #fb923c; }
+        .badge-support  { background: rgba(234,179,8,0.15);  color: #facc15; }
+        .badge-general  { background: rgba(107,114,128,0.15);color: #9ca3af; }
+
+        /* ---- Status Badge ---- */
+        .status-open     { color: #60a5fa; font-weight: 600; }
+        .status-resolved { color: #4ade80; font-weight: 600; }
+        .status-followup { color: #a78bfa; font-weight: 600; }
+
+        /* ---- Urgency text ---- */
+        .urgency-very-urgent { color: #f87171; font-size: 0.78rem; font-weight: 600; }
+        .urgency-urgent      { color: #fb923c; font-size: 0.78rem; font-weight: 600; }
+        .urgency-medium      { color: #facc15; font-size: 0.78rem; font-weight: 600; }
+        .urgency-low         { color: #9ca3af; font-size: 0.78rem; font-weight: 600; }
+
+        /* ---- Customer info ---- */
+        .customer-name  { font-weight: 600; color: #f3f4f6; }
+        .customer-email { font-size: 0.78rem; color: #6b7280; margin-top: 2px; }
+
+        /* ---- Message preview ---- */
+        .message-preview {
+            max-width: 280px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            color: #9ca3af;
+            font-size: 0.82rem;
+        }
+
+        /* ---- Date ---- */
+        .date-cell {
+            font-size: 0.78rem;
+            color: #6b7280;
+            white-space: nowrap;
+        }
+
+        /* ---- Empty state ---- */
+        .empty-state {
+            text-align: center;
+            padding: 4rem 2rem;
+            color: #4b5563;
+        }
+
+        .empty-state p {
+            font-size: 1rem;
+            margin-top: 0.5rem;
+        }
+
+        /* ---- Responsive ---- */
+        @media (max-width: 768px) {
+            body { padding: 1rem; }
+            .hide-mobile { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header -->
+    <div class="header">
+        <div class="header-left">
+            <h1>📋 Inquiry Dashboard</h1>
+            <p>Customer Inquiry Manager — Admin View</p>
+        </div>
+        <div class="header-right">
+            <a href="/">← Back to Form</a>
+        </div>
+    </div>
+
+    <!-- Stats Row -->
+    <div class="stats">
+        <div class="stat-card total">
+            <div class="stat-label">Total Inquiries</div>
+            <div class="stat-value">{{ inquiries | length }}</div>
+        </div>
+        <div class="stat-card open">
+            <div class="stat-label">Open</div>
+            <div class="stat-value">
+                {{ inquiries | selectattr("status", "equalto", "Open") | list | length }}
+            </div>
+        </div>
+        <div class="stat-card sales">
+            <div class="stat-label">Sales</div>
+            <div class="stat-value">
+                {{ inquiries | selectattr("category", "equalto", "Sales") | list | length }}
+            </div>
+        </div>
+        <div class="stat-card billing">
+            <div class="stat-label">Billing</div>
+            <div class="stat-value">
+                {{ inquiries | selectattr("category", "equalto", "Billing") | list | length }}
+            </div>
+        </div>
+    </div>
+
+    <!-- Filter Bar -->
+    <div class="filter-bar">
+        <a href="/admin"
+           class="filter-btn {% if not active_filter %}active{% endif %}">
+            All
+        </a>
+        <a href="/admin?category=Sales"
+           class="filter-btn {% if active_filter == 'Sales' %}active{% endif %}">
+            🔴 Sales
+        </a>
+        <a href="/admin?category=Billing"
+           class="filter-btn {% if active_filter == 'Billing' %}active{% endif %}">
+            🟠 Billing
+        </a>
+        <a href="/admin?category=Support"
+           class="filter-btn {% if active_filter == 'Support' %}active{% endif %}">
+            🟡 Support
+        </a>
+        <a href="/admin?category=General"
+           class="filter-btn {% if active_filter == 'General' %}active{% endif %}">
+            ⚪ General
+        </a>
+    </div>
+
+    <!-- Inquiry Table -->
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Customer</th>
+                    <th>Message Preview</th>
+                    <th>Category</th>
+                    <th>Urgency</th>
+                    <th>Status</th>
+                    <th class="hide-mobile">Date</th>
+                </tr>
+            </thead>
+            <tbody>
+
+                {% if inquiries %}
+                    {% for inq in inquiries %}
+
+                    <!-- Row color based on category -->
+                    {% if inq.category == 'Sales' %}
+                        {% set row_class = 'sales-row' %}
+                        {% set badge_class = 'badge-sales' %}
+                    {% elif inq.category == 'Billing' %}
+                        {% set row_class = 'billing-row' %}
+                        {% set badge_class = 'badge-billing' %}
+                    {% elif inq.category == 'Support' %}
+                        {% set row_class = 'support-row' %}
+                        {% set badge_class = 'badge-support' %}
+                    {% else %}
+                        {% set row_class = 'general-row' %}
+                        {% set badge_class = 'badge-general' %}
+                    {% endif %}
+
+                    <!-- Urgency style -->
+                    {% if inq.urgency == 'Very Urgent' %}
+                        {% set urgency_class = 'urgency-very-urgent' %}
+                    {% elif inq.urgency == 'Urgent' %}
+                        {% set urgency_class = 'urgency-urgent' %}
+                    {% elif inq.urgency == 'Medium' %}
+                        {% set urgency_class = 'urgency-medium' %}
+                    {% else %}
+                        {% set urgency_class = 'urgency-low' %}
+                    {% endif %}
+
+                    <!-- Status style -->
+                    {% if inq.status == 'Resolved' %}
+                        {% set status_class = 'status-resolved' %}
+                    {% elif inq.status == 'Follow-up Sent' %}
+                        {% set status_class = 'status-followup' %}
+                    {% else %}
+                        {% set status_class = 'status-open' %}
+                    {% endif %}
+
+                    <tr class="{{ row_class }}">
+                        <td style="color: #4b5563; font-size: 0.78rem;">
+                            #{{ inq.inquiry_id }}
+                        </td>
+                        <td>
+                            <div class="customer-name">{{ inq.customer_name }}</div>
+                            <div class="customer-email">{{ inq.customer_email }}</div>
+                        </td>
+                        <td>
+                            <div class="message-preview"
+                                 title="{{ inq.message }}">
+                                {{ inq.message[:100] }}{% if inq.message|length > 100 %}...{% endif %}
+                            </div>
+                            {% if inq.summary %}
+                            <div style="font-size: 0.75rem; color: #4b5563;
+                                        margin-top: 3px; font-style: italic;">
+                                AI: {{ inq.summary }}
+                            </div>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="badge {{ badge_class }}">
+                                {{ inq.category or 'Unknown' }}
+                            </span>
+                        </td>
+                        <td>
+                            <span class="{{ urgency_class }}">
+                                {{ inq.urgency or '—' }}
+                            </span>
+                        </td>
+                        <td>
+                            <span class="{{ status_class }}">
+                                {{ inq.status }}
+                            </span>
+                        </td>
+                        <td class="date-cell hide-mobile">
+                            {% if inq.received_at %}
+                                {{ inq.received_at.strftime('%b %d, %Y') }}<br>
+                                <span style="color: #4b5563;">
+                                    {{ inq.received_at.strftime('%H:%M') }}
+                                </span>
+                            {% else %}
+                                —
+                            {% endif %}
+                        </td>
+                    </tr>
+
+                    {% endfor %}
+
+                {% else %}
+                    <tr>
+                        <td colspan="7">
+                            <div class="empty-state">
+                                <div style="font-size: 2rem;">📭</div>
+                                <p>No inquiries found.</p>
+                            </div>
+                        </td>
+                    </tr>
+                {% endif %}
+
+            </tbody>
+        </table>
+    </div>
+
+</body>
+</html>
