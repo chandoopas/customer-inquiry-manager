@@ -290,7 +290,7 @@ Automated email alerts for standard urgent inquiries.
 
 ### **Emails . Very urgent**
 High-priority alerts for critical customer inquiries requiring immediate action.
-![Emails . Very urgent](Screenshots/Emails%20.%20Very%20urgent.png)
+![Emails Very Urgent](Screenshots/emails_very_urgent.png)
 
 ---
 
