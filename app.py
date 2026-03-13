@@ -1,17 +1,30 @@
 """
 Customer Inquiry Manager
 ========================
-Day 16 Update: Resolve functionality added to admin dashboard.
+Day 22 Update: Security hardening.
+
+Changes:
+    - SECRET_KEY added to Flask config (loaded from env)
+    - /admin route protected by login page
+    - /login and /logout routes added
+    - Flask sessions used to track admin authentication
+    - No hardcoded secrets anywhere
 
 Routes:
-    /                    → Customer inquiry submission form
-    /submit              → Handles form POST and saves to database
-    /admin               → Admin dashboard showing all inquiries
-    /resolve/<id>        → Marks an inquiry as Resolved  ← NEW Day 16
+    /                    → Customer inquiry form
+    /submit              → Handles form POST
+    /admin               → Admin dashboard (login required)
+    /login               → Admin login page
+    /logout              → Clears session, redirects to login
+    /resolve/<id>        → Mark inquiry as resolved (login required)
 """
 
+import os
 import logging
-from flask import Flask, render_template_string, render_template, request, redirect, url_for
+from flask import (
+    Flask, render_template_string, render_template,
+    request, redirect, url_for, session
+)
 from database import (
     get_or_create_customer,
     insert_inquiry,
@@ -21,6 +34,10 @@ from database import (
 )
 from ai_service import categorize_inquiry
 from notifications import send_urgent_notification
+from dotenv import load_dotenv
+from functools import wraps
+
+load_dotenv()
 
 # ---------------------------------------------------------------------------
 # Logging Setup
@@ -36,7 +53,38 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Flask App
+# ---------------------------------------------------------------------------
+
 app = Flask(__name__)
+
+# SECRET_KEY is required for Flask sessions to work securely
+# Never hardcode this — always load from environment variable
+app.secret_key = os.getenv("SECRET_KEY")
+
+# Admin credentials — loaded from environment, never hardcoded
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
+
+
+# ---------------------------------------------------------------------------
+# Login Required Decorator
+# ---------------------------------------------------------------------------
+
+def login_required(f):
+    """
+    Decorator that protects routes from unauthenticated access.
+    Redirects to /login if the user is not logged in.
+    Usage: add @login_required below any route decorator.
+    """
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get("admin_logged_in"):
+            logger.warning(f"Unauthenticated access attempt to {request.path}")
+            return redirect(url_for("login"))
+        return f(*args, **kwargs)
+    return decorated_function
 
 
 # ---------------------------------------------------------------------------
@@ -233,7 +281,152 @@ HOME_TEMPLATE = """<!DOCTYPE html>
 
 
 # ---------------------------------------------------------------------------
-# Routes
+# HTML Template — Admin Login Page
+# ---------------------------------------------------------------------------
+
+LOGIN_TEMPLATE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Login — Customer Inquiry Manager</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@300;400;500;600&display=swap');
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'DM Sans', sans-serif;
+            background-color: #0f1117;
+            color: #e8e8e8;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+        }
+
+        .card {
+            background: #1a1d27;
+            border: 1px solid #2a2d3a;
+            border-radius: 16px;
+            padding: 2.5rem;
+            width: 100%;
+            max-width: 420px;
+            box-shadow: 0 24px 60px rgba(0,0,0,0.4);
+        }
+
+        .lock-icon {
+            font-size: 2rem;
+            margin-bottom: 1rem;
+            display: block;
+            text-align: center;
+        }
+
+        h1 {
+            font-family: 'DM Serif Display', serif;
+            font-size: 1.6rem;
+            color: #ffffff;
+            text-align: center;
+            margin-bottom: 0.4rem;
+        }
+
+        .subtitle {
+            color: #6b7280;
+            font-size: 0.88rem;
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .form-group { margin-bottom: 1.2rem; }
+
+        label {
+            display: block;
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: #9ca3af;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            margin-bottom: 0.45rem;
+        }
+
+        input[type="text"],
+        input[type="password"] {
+            width: 100%;
+            background: #0f1117;
+            border: 1px solid #2a2d3a;
+            border-radius: 8px;
+            color: #e8e8e8;
+            font-family: 'DM Sans', sans-serif;
+            font-size: 0.95rem;
+            padding: 0.75rem 1rem;
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        input:focus {
+            border-color: #6366f1;
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+        }
+
+        .btn {
+            width: 100%;
+            background: #6366f1;
+            color: #ffffff;
+            border: none;
+            border-radius: 8px;
+            font-family: 'DM Sans', sans-serif;
+            font-size: 0.95rem;
+            font-weight: 600;
+            padding: 0.85rem 1rem;
+            cursor: pointer;
+            transition: background 0.2s;
+            margin-top: 0.5rem;
+        }
+
+        .btn:hover { background: #4f46e5; }
+
+        .error {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #f87171;
+            border-radius: 8px;
+            padding: 0.75rem 1rem;
+            font-size: 0.88rem;
+            margin-bottom: 1.2rem;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <span class="lock-icon">🔐</span>
+        <h1>Admin Login</h1>
+        <p class="subtitle">Customer Inquiry Manager</p>
+
+        {% if error %}
+        <div class="error">❌ {{ error }}</div>
+        {% endif %}
+
+        <form method="POST" action="/login">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username"
+                       placeholder="admin" required autofocus>
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password"
+                       placeholder="••••••••" required>
+            </div>
+            <button type="submit" class="btn">Sign In →</button>
+        </form>
+    </div>
+</body>
+</html>"""
+
+
+# ---------------------------------------------------------------------------
+# Routes — Public
 # ---------------------------------------------------------------------------
 
 @app.route("/")
@@ -244,16 +437,6 @@ def home():
 
 @app.route("/submit", methods=["POST"])
 def submit():
-    """
-    Full pipeline:
-    1. Validate form data
-    2. Save customer to DB
-    3. Save inquiry to DB
-    4. AI categorizes message
-    5. Save AI result to DB
-    6. Send instant notification if Sales or Billing
-    7. Show success to customer
-    """
     name    = request.form.get("name",    "").strip()
     email   = request.form.get("email",   "").strip()
     message = request.form.get("message", "").strip()
@@ -265,15 +448,12 @@ def submit():
     logger.info(f"New inquiry received from {email}")
 
     try:
-        # Save customer
         customer_id = get_or_create_customer(name, email)
         logger.info(f"Customer saved/found — ID: {customer_id} | Email: {email}")
 
-        # Save inquiry
         inquiry_id = insert_inquiry(customer_id, message)
         logger.info(f"Inquiry saved — ID: {inquiry_id} | Customer ID: {customer_id}")
 
-        # AI categorization
         try:
             ai_result = categorize_inquiry(message)
             logger.info(
@@ -289,16 +469,14 @@ def submit():
                 "summary":  "AI categorization failed — please review manually."
             }
 
-        # Save AI result
         insert_ai_category(
             inquiry_id    = inquiry_id,
             category      = ai_result["category"],
             urgency_level = ai_result["urgency"],
             ai_summary    = ai_result["summary"]
         )
-        logger.info(f"AI category saved — Inquiry: {inquiry_id} | Category: {ai_result['category']}")
+        logger.info(f"AI category saved — Inquiry: {inquiry_id}")
 
-        # Send urgent notification if Sales or Billing
         if ai_result["category"] in ("Sales", "Billing"):
             send_urgent_notification(
                 name     = name,
@@ -308,9 +486,9 @@ def submit():
                 urgency  = ai_result["urgency"],
                 summary  = ai_result["summary"]
             )
-            logger.info(f"Urgent notification sent — Category: {ai_result['category']} | Customer: {email}")
+            logger.info(f"Urgent notification sent — Category: {ai_result['category']}")
         else:
-            logger.info(f"No instant notification — Category: {ai_result['category']} (queued for daily summary)")
+            logger.info(f"No instant notification — Category: {ai_result['category']}")
 
         return render_template_string(HOME_TEMPLATE, submitted=True, error=False)
 
@@ -319,17 +497,51 @@ def submit():
         return render_template_string(HOME_TEMPLATE, submitted=False, error=True)
 
 
-@app.route("/admin")
-def admin():
-    """
-    Admin dashboard — shows all inquiries with AI categories.
+# ---------------------------------------------------------------------------
+# Routes — Auth
+# ---------------------------------------------------------------------------
 
-    Supports category filtering via URL query parameter:
-        /admin                  → shows all inquiries
-        /admin?category=Sales   → shows only Sales
-        /admin?category=Billing → shows only Billing
-        etc.
-    """
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "").strip()
+
+        if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
+            session["admin_logged_in"] = True
+            session["admin_username"]  = username
+            logger.info(f"Admin login successful — user: {username}")
+            return redirect(url_for("admin"))
+        else:
+            logger.warning(f"Failed login attempt — username: {username}")
+            return render_template_string(
+                LOGIN_TEMPLATE,
+                error="Incorrect username or password."
+            )
+
+    # GET request — show login form
+    # If already logged in redirect straight to dashboard
+    if session.get("admin_logged_in"):
+        return redirect(url_for("admin"))
+
+    return render_template_string(LOGIN_TEMPLATE, error=None)
+
+
+@app.route("/logout")
+def logout():
+    username = session.get("admin_username", "unknown")
+    session.clear()
+    logger.info(f"Admin logged out — user: {username}")
+    return redirect(url_for("login"))
+
+
+# ---------------------------------------------------------------------------
+# Routes — Admin (login required)
+# ---------------------------------------------------------------------------
+
+@app.route("/admin")
+@login_required
+def admin():
     category_filter = request.args.get("category", "")
     all_inquiries   = get_all_inquiries()
 
@@ -339,9 +551,8 @@ def admin():
         inquiries = all_inquiries
 
     logger.info(
-        f"Admin dashboard visited — "
-        f"{len(inquiries)} inquiries shown | "
-        f"Filter: {category_filter or 'All'}"
+        f"Admin dashboard visited by {session.get('admin_username')} — "
+        f"{len(inquiries)} inquiries | Filter: {category_filter or 'All'}"
     )
 
     return render_template(
@@ -352,18 +563,12 @@ def admin():
 
 
 @app.route("/resolve/<int:inquiry_id>")
+@login_required
 def resolve(inquiry_id):
-    """
-    Marks an inquiry as Resolved and redirects back to the dashboard.
-    Preserves the active category filter if one was set.
-
-    Args:
-        inquiry_id (int): ID of the inquiry to resolve (from URL)
-    """
     resolve_inquiry(inquiry_id)
-    logger.info(f"Inquiry {inquiry_id} marked as Resolved")
-
-    # Preserve active filter when redirecting back
+    logger.info(
+        f"Inquiry {inquiry_id} resolved by {session.get('admin_username')}"
+    )
     category = request.args.get("category", "")
     if category:
         return redirect(url_for("admin", category=category))
