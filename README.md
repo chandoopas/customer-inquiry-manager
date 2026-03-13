@@ -260,17 +260,51 @@ See [LESSONS_LEARNED.md](LESSONS_LEARNED.md) for a full log of 15+ real errors e
 
 ---
 
-## 👨‍💻 Screenshot
-## Customer Inquery Form
-![Customer Inquery Form](Screenshots/Customer Inquery Form.png)
+---
 
-- Admin Login Page
+## 👨‍💻 Screenshots
 
-- Inquery Dashbord
-- Emails . Urgent
-- Emails . Very urgent
-- Customer Inquery Database 
+### **Customer Inquiry Form**
+Captures user data and inquiry details directly into the system.
+![Customer Inquery Form](Screenshots/Customer%20Inquery%20Form.png)
 
+---
+
+### **Admin Login Page**
+Secure access portal for administrative tasks and dashboard monitoring.
+![Admin Login Page](Screenshots/Admin%20Login%20Page.png)
+
+---
+
+### **Inquiry Dashboard**
+A high-level overview of daily inquiry trends and system status.
+![Inquery Dashbord](Screenshots/Daily%20inquery%20Summary.png)
+
+---
+
+### **Emails . Urgent**
+Automated email alerts for standard urgent inquiries.
+![Emails . Urgent](Screenshots/Emails.urgent.png)
+
+---
+
+### **Emails . Very urgent**
+High-priority alerts for critical customer inquiries requiring immediate action.
+![Emails . Very urgent](Screenshots/Emails.Very%20Urgent.png)
+
+---
+
+### **Customer Inquiry Database**
+Centralized storage and management for all captured inquiry data.
+![Customer Inquery Database](Screenshots/customer%20inquery%20database.png)
+
+---
+
+### **System Monitoring**
+**CPU Alerts:** Real-time monitoring of infrastructure performance.
+![Cpu Alerts](Screenshots/Cpu%20Alerts.png)
+
+---
 
 
 **GitHub:** [@chandoopas](https://github.com/chandoopas)
