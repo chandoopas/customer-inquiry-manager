@@ -278,8 +278,12 @@ Secure access portal for administrative tasks and dashboard monitoring.
 
 ### **Inquiry Dashboard**
 A high-level overview of daily inquiry trends and system status.
-![Inquery Dashbord](Screenshots/Daily%20inquery%20Summary.png)
+![Inquery Dashbord](Screenshots/Inquery_Dashbord.png)
 
+---
+---
+### **Daily Inquery Suumery**
+![Daily Inquery Suumery](Screenshots/Daily%20inquery%20Summary.png)
 ---
 
 ### **Emails . Urgent**
